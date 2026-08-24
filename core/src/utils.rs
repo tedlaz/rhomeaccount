@@ -99,7 +99,7 @@ pub fn gr_num(number: f64) -> String {
     let mut grouped = String::new();
     let n = ints.len();
     for (i, ch) in ints.chars().enumerate() {
-        if i > 0 && (n - i) % 3 == 0 {
+        if i > 0 && (n - i).is_multiple_of(3) {
             grouped.push('.');
         }
         grouped.push(ch);
@@ -132,7 +132,7 @@ pub fn f2gr(number: f64) -> String {
     let mut grouped = String::new();
     let n = ints.len();
     for (i, ch) in ints.chars().enumerate() {
-        if i > 0 && (n - i) % 3 == 0 {
+        if i > 0 && (n - i).is_multiple_of(3) {
             grouped.push('.');
         }
         grouped.push(ch);
