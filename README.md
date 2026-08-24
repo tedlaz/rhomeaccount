@@ -76,9 +76,9 @@ builds all three packages and leaves them as workflow artifacts without
 touching releases — the cheap way to test a packaging change before tagging.
 
 Note that the Flatpak is built with the network switched off, the way
-flatpak-builder always builds. The workflow vendors the crates in a separate
-job and hands them over as an artifact, so `Cargo.lock` must be committed and
-in sync or the build fails on `--locked`.
+flatpak-builder always builds. The flatpak job vendors the crates into the
+workspace first, so `Cargo.lock` must be committed and in sync or the build
+fails on `--locked`.
 
 ### 1. Start from a clean `main`
 
@@ -157,11 +157,11 @@ git push origin main --follow-tags
 gh run watch
 ```
 
-Or open the **Actions** tab. Six jobs run: `setup` decides the version string,
-`windows` and `appimage` build in parallel, `vendor` collects the crates for
-`flatpak`, and `release` gathers the three artifacts and publishes them.
-Expect roughly 10–20 minutes; the size-tuned release profile (fat LTO, one
-codegen unit) is the slow part.
+Or open the **Actions** tab. Five jobs run: `setup` decides the version
+string, `windows`, `appimage` and `flatpak` build in parallel, and `release`
+gathers the three artifacts and publishes them. Expect roughly 10–20
+minutes; the size-tuned release profile (fat LTO, one codegen unit) is the
+slow part.
 
 ## After the release
 

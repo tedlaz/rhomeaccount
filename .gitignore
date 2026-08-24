@@ -4,3 +4,4 @@ out.log
 /vendor
 /dist
 /AppDir
+/.cargo/config.toml

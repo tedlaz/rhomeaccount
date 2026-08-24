@@ -12,6 +12,12 @@ rhomeaccount-core = { path = "../core" }
 eframe = { version = "=0.31.1", default-features = false, features = [
     "glow",
     "accesskit",
+    # Both are in eframe's defaults and both went away with them. winit has
+    # no fallback backend: without a windowing feature a Linux build stops at
+    # "the platform you're compiling for is not supported by winit". No-ops
+    # on Windows and macOS.
+    "x11",
+    "wayland",
 ] }
 egui_plot = "=0.32.1"
 egui_extras = "=0.31.1"

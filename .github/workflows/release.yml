@@ -23,7 +23,7 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: v
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
@@ -38,7 +38,7 @@ jobs:
     needs: setup
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
@@ -53,7 +53,7 @@ jobs:
           cd dist
           7z a "rhomeaccount-${{ needs.setup.outputs.version }}-windows-x86_64.zip" rhomeaccount
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows
           path: dist/*.zip
@@ -65,7 +65,7 @@ jobs:
     # at least as new as the one it was linked against.
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
@@ -105,49 +105,29 @@ jobs:
             --output appimage
           mkdir -p dist && mv "$OUTPUT" dist/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: appimage
           path: dist/*.AppImage
           if-no-files-found: error
 
-  # flatpak-builder runs with the network cut off, so the crates have to be on
-  # disk before it starts. Vendoring needs a normal cargo, which the flatpak
-  # container image does not have — hence a separate job.
-  vendor:
-    needs: setup
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Vendor crates
-        run: |
-          mkdir -p .cargo
-          cargo vendor --locked vendor > .cargo/config.toml
-          tar -czf vendor.tar.gz vendor .cargo
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: vendor
-          path: vendor.tar.gz
-          if-no-files-found: error
-
   flatpak:
-    needs: [setup, vendor]
+    needs: setup
     runs-on: ubuntu-latest
     container:
       image: bilelmoussaoui/flatpak-github-actions:freedesktop-24.08
       options: --privileged
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: vendor
-
-      - name: Unpack vendored crates
-        run: tar -xzf vendor.tar.gz && rm vendor.tar.gz
+      # flatpak-builder runs with the network cut off, so every crate has to
+      # be on disk before it starts. Fedora's cargo is only here to fetch
+      # them — the build itself uses the one from the Rust SDK extension.
+      - name: Vendor the crates
+        run: |
+          dnf install -y cargo
+          mkdir -p .cargo
+          cargo vendor --locked vendor > .cargo/config.toml
 
       - name: Install the Rust SDK extension
         run: |
@@ -162,7 +142,7 @@ jobs:
           manifest-path: packaging/flatpak/io.github.tedlaz.rhomeaccount.yml
           cache-key: flatpak-builder-${{ github.sha }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: flatpak
           path: '*.flatpak'
@@ -173,7 +153,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -181,7 +161,7 @@ jobs:
       - name: List what is being published
         run: ls -lh dist
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           name: rhomeaccount ${{ needs.setup.outputs.version }}
           draft: false
