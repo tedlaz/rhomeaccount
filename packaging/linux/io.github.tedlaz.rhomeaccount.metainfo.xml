@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.tedlaz.rhomeaccount</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>rhomeaccount</name>
+  <summary>Personal home accounting</summary>
+
+  <description>
+    <p>
+      rhomeaccount keeps a personal, double entry set of books. It opens a book
+      folder of plain text journal files, shows the trial balance as a
+      collapsible account tree, and displays the selected account's card
+      together with a chart, date filters and a balance check report.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.tedlaz.rhomeaccount.desktop</launchable>
+
+  <url type="homepage">https://github.com/tedlaz/rhomeaccount</url>
+  <url type="bugtracker">https://github.com/tedlaz/rhomeaccount/issues</url>
+
+  <developer id="io.github.tedlaz">
+    <name>Ted Lazaros</name>
+  </developer>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.1.0" date="2026-08-24">
+      <description>
+        <p>First release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

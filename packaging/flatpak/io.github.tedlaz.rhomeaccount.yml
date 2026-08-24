@@ -1,0 +1,44 @@
+# Flatpak manifest for rhomeaccount.
+#
+# The build sandbox has no network, so the crates must already be on disk:
+# CI runs `cargo vendor` (see .github/workflows/release.yml) which writes
+# `vendor/` plus a `.cargo/config.toml` that redirects crates.io to it. Both
+# land in the `dir` source below, and cargo is then run with `--offline`.
+id: io.github.tedlaz.rhomeaccount
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: rhomeaccount
+
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri          # OpenGL, the egui/glow backend needs it
+  - --filesystem=home     # book folders live wherever the user keeps them
+
+modules:
+  - name: rhomeaccount
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin
+      env:
+        CARGO_HOME: /run/build/rhomeaccount/cargo-home
+    build-commands:
+      - cargo build --release --offline --locked -p rhomeaccount
+      - install -Dm755 target/release/rhomeaccount /app/bin/rhomeaccount
+      - install -Dm644 packaging/linux/io.github.tedlaz.rhomeaccount.desktop
+        /app/share/applications/io.github.tedlaz.rhomeaccount.desktop
+      - install -Dm644 packaging/linux/io.github.tedlaz.rhomeaccount.metainfo.xml
+        /app/share/metainfo/io.github.tedlaz.rhomeaccount.metainfo.xml
+      - install -Dm644 app/assets/homeacc.png
+        /app/share/icons/hicolor/512x512/apps/io.github.tedlaz.rhomeaccount.png
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - .git
+          - .github
+          - target

@@ -2,7 +2,7 @@
 // output still have somewhere to go while developing.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-//! qhomeacc — personal home accounting (Rust/egui port of the PySide6 app).
+//! rhomeaccount — personal home accounting (Rust/egui port of the PySide6 app).
 //!
 //! Opens a "book" folder of text journal files (same format as the Python
 //! version), shows the trial balance as a collapsible account tree on the
@@ -23,10 +23,10 @@ use egui::{Color32, RichText};
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{Bar, BarChart, HLine, Line, Plot, PlotPoints};
 use image::GenericImageView;
-use qhomeacc_core::book::Book;
-use qhomeacc_core::date_groups::Grouping;
-use qhomeacc_core::transaction::Transaction;
-use qhomeacc_core::utils::{f2gr, grup, round2};
+use rhomeaccount_core::book::Book;
+use rhomeaccount_core::date_groups::Grouping;
+use rhomeaccount_core::transaction::Transaction;
+use rhomeaccount_core::utils::{f2gr, grup, round2};
 use serde::{Deserialize, Serialize};
 
 use theme::{Kind, Palette, ThemeId, WinBtn};
@@ -37,7 +37,10 @@ fn main() -> eframe::Result {
         .with_min_inner_size([900.0, 560.0])
         .with_decorations(false) // we draw our own title bar
         .with_transparent(true) // so the rounded corners are really rounded
-        .with_resizable(true);
+        .with_resizable(true)
+        // Wayland and X11 match a window to its .desktop file by app id, so
+        // this has to be the packaged id or the dock shows a generic icon.
+        .with_app_id("io.github.tedlaz.rhomeaccount");
     if let Some(icon) = load_icon() {
         viewport = viewport.with_icon(icon);
     }
@@ -46,7 +49,7 @@ fn main() -> eframe::Result {
         ..Default::default()
     };
     eframe::run_native(
-        "qhomeacc",
+        "rhomeaccount",
         options,
         Box::new(|cc| {
             theme::install_fonts(&cc.egui_ctx);
@@ -158,7 +161,11 @@ impl Settings {
     }
 
     fn path() -> Option<PathBuf> {
-        dirs::config_dir().map(|d| d.join("TedLazaros").join("qhomeacc").join("settings.json"))
+        dirs::config_dir().map(|d| {
+            d.join("TedLazaros")
+                .join("rhomeaccount")
+                .join("settings.json")
+        })
     }
 
     fn load() -> Settings {
@@ -347,7 +354,7 @@ impl QHomeAccApp {
     }
 
     fn open_book(&mut self, path: String) {
-        match qhomeacc_core::parser_text::parse_folder(&path) {
+        match rhomeaccount_core::parser_text::parse_folder(&path) {
             Ok((book, errors)) => {
                 // Parse errors are reported but do not block opening: a single
                 // unregistered account should not make the whole book
@@ -673,7 +680,7 @@ impl QHomeAccApp {
                         p.on_accent,
                     );
                     ui.add_space(2.0);
-                    ui.label(theme::bold("qhomeacc", 13.5).color(p.text));
+                    ui.label(theme::bold("rhomeaccount", 13.5).color(p.text));
 
                     ui.add_space(10.0);
                     if theme::icon_button(
@@ -1126,7 +1133,7 @@ impl QHomeAccApp {
             theme::card(p).show(ui, |ui| {
                 ui.set_max_width(430.0);
                 ui.vertical_centered(|ui| {
-                    ui.label(theme::bold("qhomeacc", 13.0).color(p.accent));
+                    ui.label(theme::bold("rhomeaccount", 13.0).color(p.accent));
                     ui.add_space(6.0);
                     ui.label(theme::bold("Κανένα ανοιχτό βιβλίο", 19.0));
                     ui.add_space(4.0);

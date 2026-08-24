@@ -1,0 +1,201 @@
+name: Release
+
+# Tagging `vX.Y.Z` builds all three packages and publishes them on a GitHub
+# release. Running it by hand only builds them and leaves them as workflow
+# artifacts, which is the cheap way to check a packaging change.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  APP_ID: io.github.tedlaz.rhomeaccount
+
+jobs:
+  # One place decides the version string every artifact name uses.
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF#refs/tags/v}"
+          else
+            version="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)+$(git rev-parse --short HEAD)"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building version $version"
+
+  windows:
+    needs: setup
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release --locked -p rhomeaccount
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist/rhomeaccount
+          cp target/release/rhomeaccount.exe dist/rhomeaccount/
+          cd dist
+          7z a "rhomeaccount-${{ needs.setup.outputs.version }}-windows-x86_64.zip" rhomeaccount
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*.zip
+          if-no-files-found: error
+
+  appimage:
+    needs: setup
+    # The oldest still supported runner: an AppImage can only run on a glibc
+    # at least as new as the one it was linked against.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libx11-dev libxrandr-dev libxi-dev libxcursor-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            libgl1-mesa-dev libegl1-mesa-dev file desktop-file-utils
+
+      - name: Build
+        run: cargo build --release --locked -p rhomeaccount
+
+      - name: Assemble AppDir
+        run: |
+          install -Dm755 target/release/rhomeaccount AppDir/usr/bin/rhomeaccount
+          install -Dm644 "packaging/linux/$APP_ID.metainfo.xml" \
+            "AppDir/usr/share/metainfo/$APP_ID.metainfo.xml"
+
+      - name: Build AppImage
+        env:
+          # No FUSE on the runners, so every AppImage tool has to unpack
+          # itself instead of mounting.
+          APPIMAGE_EXTRACT_AND_RUN: 1
+          OUTPUT: rhomeaccount-${{ needs.setup.outputs.version }}-x86_64.AppImage
+        run: |
+          curl -fsSL -o linuxdeploy \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          chmod +x linuxdeploy
+          ./linuxdeploy \
+            --appdir AppDir \
+            --executable target/release/rhomeaccount \
+            --desktop-file "packaging/linux/$APP_ID.desktop" \
+            --icon-file app/assets/homeacc.png \
+            --icon-filename "$APP_ID" \
+            --output appimage
+          mkdir -p dist && mv "$OUTPUT" dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: dist/*.AppImage
+          if-no-files-found: error
+
+  # flatpak-builder runs with the network cut off, so the crates have to be on
+  # disk before it starts. Vendoring needs a normal cargo, which the flatpak
+  # container image does not have — hence a separate job.
+  vendor:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Vendor crates
+        run: |
+          mkdir -p .cargo
+          cargo vendor --locked vendor > .cargo/config.toml
+          tar -czf vendor.tar.gz vendor .cargo
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vendor
+          path: vendor.tar.gz
+          if-no-files-found: error
+
+  flatpak:
+    needs: [setup, vendor]
+    runs-on: ubuntu-latest
+    container:
+      image: bilelmoussaoui/flatpak-github-actions:freedesktop-24.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: vendor
+
+      - name: Unpack vendored crates
+        run: tar -xzf vendor.tar.gz && rm vendor.tar.gz
+
+      - name: Install the Rust SDK extension
+        run: |
+          flatpak remote-add --if-not-exists --user flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install -y --user flathub \
+            org.freedesktop.Sdk.Extension.rust-stable//24.08
+
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: rhomeaccount-${{ needs.setup.outputs.version }}-x86_64.flatpak
+          manifest-path: packaging/flatpak/io.github.tedlaz.rhomeaccount.yml
+          cache-key: flatpak-builder-${{ github.sha }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak
+          path: '*.flatpak'
+          if-no-files-found: error
+
+  release:
+    needs: [setup, windows, appimage, flatpak]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List what is being published
+        run: ls -lh dist
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: rhomeaccount ${{ needs.setup.outputs.version }}
+          draft: false
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/*.zip
+            dist/*.AppImage
+            dist/*.flatpak
+          body: |
+            ## Downloads
+
+            | Platform | File | How to run |
+            | --- | --- | --- |
+            | Windows | `.zip` | Unzip and run `rhomeaccount.exe`. |
+            | Linux | `.AppImage` | `chmod +x rhomeaccount-*.AppImage && ./rhomeaccount-*.AppImage` |
+            | Linux | `.flatpak` | `flatpak install --user ./rhomeaccount-*.flatpak` then `flatpak run ${{ env.APP_ID }}` |

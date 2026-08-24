@@ -1,12 +1,12 @@
 [package]
-name = "qhomeacc"
+name = "rhomeaccount"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 description = "Personal home accounting (egui port of the PySide6 qhomeacc app)"
 
 [dependencies]
-qhomeacc-core = { path = "../core" }
+rhomeaccount-core = { path = "../core" }
 # default features dropped: `default_fonts` bundles Ubuntu + emoji faces we
 # replace in theme::install_fonts, and they cost ~1.3 MB in the release binary.
 eframe = { version = "=0.31.1", default-features = false, features = [

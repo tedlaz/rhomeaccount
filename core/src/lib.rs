@@ -1,4 +1,4 @@
-//! Core accounting library for qhomeacc — port of the Python `qlogistiki` package.
+//! Core accounting library for rhomeaccount — port of the Python `qlogistiki` package.
 
 pub mod account;
 pub mod book;

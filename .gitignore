@@ -1,3 +1,6 @@
 /target
 err.log
 out.log
+/vendor
+/dist
+/AppDir

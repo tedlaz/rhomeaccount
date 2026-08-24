@@ -1,9 +1,9 @@
 [package]
-name = "qhomeacc-core"
+name = "rhomeaccount-core"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-description = "Core accounting library for qhomeacc (port of qlogistiki)"
+description = "Core accounting library for rhomeaccount (port of qlogistiki)"
 
 [dependencies]
 chrono = "0.4"

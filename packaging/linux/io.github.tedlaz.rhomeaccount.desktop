@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=rhomeaccount
+GenericName=Home Accounting
+Comment=Personal home accounting — double entry book keeping
+Exec=rhomeaccount
+Icon=io.github.tedlaz.rhomeaccount
+Terminal=false
+Categories=Office;Finance;
+Keywords=accounting;finance;ledger;bookkeeping;
+StartupWMClass=io.github.tedlaz.rhomeaccount

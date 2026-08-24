@@ -346,7 +346,7 @@ mod tests {
 
     /// Copies the fixture book into a temp dir so a journal can be perturbed.
     fn book_with_extra_journal(tag: &str, contents: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("qhomeacc_test_{}", tag));
+        let dir = std::env::temp_dir().join(format!("rhomeaccount_test_{}", tag));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         fs::copy(fixture_dir().join("000"), dir.join("000")).unwrap();

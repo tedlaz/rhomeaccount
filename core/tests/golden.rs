@@ -4,9 +4,9 @@
 
 use std::path::Path;
 
-use qhomeacc_core::date_groups::Grouping;
-use qhomeacc_core::parser_text::parse_folder;
-use qhomeacc_core::utils::{f2gr, gr2float, round2};
+use rhomeaccount_core::date_groups::Grouping;
+use rhomeaccount_core::parser_text::parse_folder;
+use rhomeaccount_core::utils::{f2gr, gr2float, round2};
 
 fn fixture_dir() -> String {
     Path::new(env!("CARGO_MANIFEST_DIR"))
