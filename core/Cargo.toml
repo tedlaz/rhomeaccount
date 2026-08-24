@@ -1,0 +1,12 @@
+[package]
+name = "qhomeacc-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Core accounting library for qhomeacc (port of qlogistiki)"
+
+[dependencies]
+chrono = "0.4"
+
+[dev-dependencies]
+serde_json = "1"

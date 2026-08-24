@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = ["core", "app"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Ted Lazaros"]
+
+# Tuned for the smallest possible `cargo build -r` binary.
+[profile.release]
+opt-level = "z"     # favour size over speed in codegen
+lto = "fat"         # cross-crate inlining and dead-code removal
+codegen-units = 1   # one unit lets LTO see everything at once
+panic = "abort"     # drops the unwinding tables and landing pads
+strip = "symbols"   # no symbol or debug tables in the output
+incremental = false # incremental objects defeat whole-program LTO
+
+# Dependencies are built with the same size settings; without this they keep
+# the default release opt-level and dominate the binary.
+[profile.release.package."*"]
+opt-level = "z"
+codegen-units = 1
