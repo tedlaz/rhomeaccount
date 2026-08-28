@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use chrono::{NaiveDate, Utc};
+use chrono::{Datelike, NaiveDate, Utc};
 
 use crate::account::ChartOfAccounts;
 use crate::date_groups::Grouping;
@@ -16,6 +16,16 @@ pub struct IsoTotals {
     pub tdebit: f64,
     pub tcredit: f64,
     pub tdelta: f64,
+}
+
+/// One row of the yearly profit-and-loss report.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct YearResult {
+    pub year: i32,
+    pub esoda: f64,
+    pub ejoda: f64,
+    /// esoda - ejoda: positive means the year ended in profit.
+    pub apotelesma: f64,
 }
 
 pub struct Book {
@@ -306,6 +316,42 @@ impl Book {
         Ok(fis)
     }
 
+    /// Income minus expenses per year, oldest year first.
+    ///
+    /// Only the `esoda` and `ejoda` categories of the chart count; `anorgana`
+    /// and everything else stay out. Both figures come from `delta`, so income
+    /// (a reverse-nature account) reads positive just like the expenses do.
+    /// Years with no income or expense movement are left out rather than
+    /// padded with a zero row.
+    pub fn results_by_year(&self, apo: Option<&str>, eos: Option<&str>) -> Vec<YearResult> {
+        let mut per_year: BTreeMap<i32, (f64, f64)> = BTreeMap::new();
+        for trn in self.transactions_filter(apo, eos) {
+            for lin in &trn.lines {
+                let types = self.chart.account_type(&lin.account_name);
+                let is_esoda = types.iter().any(|t| t == "esoda");
+                let is_ejoda = types.iter().any(|t| t == "ejoda");
+                if !is_esoda && !is_ejoda {
+                    continue;
+                }
+                let entry = per_year.entry(trn.date.year()).or_default();
+                if is_esoda {
+                    entry.0 += lin.delta(&self.chart);
+                } else {
+                    entry.1 += lin.delta(&self.chart);
+                }
+            }
+        }
+        per_year
+            .into_iter()
+            .map(|(year, (esoda, ejoda))| YearResult {
+                year,
+                esoda: round2(esoda),
+                ejoda: round2(ejoda),
+                apotelesma: round2(esoda - ejoda),
+            })
+            .collect()
+    }
+
     /// Trial balance rows: [account, formatted balance].
     pub fn model_isozygio(
         &self,
@@ -403,5 +449,35 @@ mod tests {
         assert!(ts.is_some());
         let ts = ts.unwrap();
         assert!(ts.iter().all(|(k, _, _)| k.len() == 4 || k.len() == 5));
+    }
+
+    #[test]
+    fn test_results_by_year() {
+        let (book, _) = parse_folder(fixture_dir().to_str().unwrap()).unwrap();
+        let rows = book.results_by_year(None, None);
+        assert!(!rows.is_empty());
+        // oldest year first, no duplicates
+        assert!(rows.windows(2).all(|w| w[0].year < w[1].year));
+        for row in &rows {
+            assert_eq!(row.apotelesma, round2(row.esoda - row.ejoda));
+        }
+
+        // Cross-check against ypoloipo, which sums raw values: in book01 the
+        // only esoda prefix is "Εσοδα" and the only ejoda one is "Εξοδα".
+        // Income values are negative, hence the sign flip.
+        let total_esoda: f64 = rows.iter().map(|r| r.esoda).sum();
+        let total_ejoda: f64 = rows.iter().map(|r| r.ejoda).sum();
+        assert_eq!(round2(total_esoda), round2(-book.ypoloipo("Εσοδα", None)));
+        assert_eq!(round2(total_ejoda), round2(book.ypoloipo("Εξοδα", None)));
+    }
+
+    #[test]
+    fn test_results_by_year_respects_eos() {
+        let (book, _) = parse_folder(fixture_dir().to_str().unwrap()).unwrap();
+        let all = book.results_by_year(None, None);
+        let upto = book.results_by_year(None, Some("2022-01-31"));
+        assert!(upto.iter().all(|r| r.year <= 2022));
+        let sum = |rows: &[YearResult]| -> f64 { rows.iter().map(|r| r.ejoda).sum() };
+        assert!(sum(&upto) <= sum(&all));
     }
 }

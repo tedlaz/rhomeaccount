@@ -23,7 +23,7 @@ use egui::{Color32, RichText};
 use egui_extras::{Column, TableBuilder};
 use egui_plot::{Bar, BarChart, HLine, Line, Plot, PlotPoints};
 use image::GenericImageView;
-use rhomeaccount_core::book::Book;
+use rhomeaccount_core::book::{Book, YearResult};
 use rhomeaccount_core::date_groups::Grouping;
 use rhomeaccount_core::transaction::Transaction;
 use rhomeaccount_core::utils::{f2gr, grup, round2};
@@ -247,6 +247,10 @@ const CUMULATIVE_KINDS: [Kind; 5] = [
     Kind::Apothemata,
 ];
 
+/// How tall a popup's scrolling body may grow before it starts scrolling
+/// rather than pushing the window past the screen.
+const POPUP_MAX_H: f32 = 420.0;
+
 const TITLE_BAR_H: f32 = 40.0;
 /// Space the title bar keeps clear on the right for the theme toggle, the
 /// period picker and the caption buttons.
@@ -277,6 +281,8 @@ struct QHomeAccApp {
     show_transaction: Option<Transaction>,
     show_validations: bool,
     validation_rows: Vec<(String, String, f64, f64, f64, bool)>,
+    show_results: bool,
+    result_rows: Vec<YearResult>,
     parse_errors: Vec<String>,
     show_errors: bool,
     fatal_error: Option<String>,
@@ -317,6 +323,8 @@ impl QHomeAccApp {
             show_transaction: None,
             show_validations: false,
             validation_rows: Vec::new(),
+            show_results: false,
+            result_rows: Vec::new(),
             parse_errors: Vec::new(),
             show_errors: false,
             fatal_error: None,
@@ -401,6 +409,15 @@ impl QHomeAccApp {
         }
         self.validation_rows = rows;
         self.show_validations = true;
+    }
+
+    /// «Αποτελέσματα ανά έτος» — income minus expenses per year.
+    fn results(&mut self) {
+        let eos = self.eos();
+        let Some(book) = &self.book else { return };
+        let rows = book.results_by_year(None, eos.as_deref());
+        self.result_rows = rows;
+        self.show_results = true;
     }
 
     // ------------------------------------------------------------- caches
@@ -709,6 +726,17 @@ impl QHomeAccApp {
                     .clicked()
                     {
                         self.validate();
+                    }
+                    if theme::icon_button(
+                        ui,
+                        p,
+                        theme::ToolIcon::BarChart,
+                        self.book.is_some(),
+                        "Αποτελέσματα ανά έτος",
+                    )
+                    .clicked()
+                    {
+                        self.results();
                     }
                     if n_errors > 0 {
                         let warn = egui::Button::new(
@@ -1349,6 +1377,27 @@ fn num_cell(row: &mut egui_extras::TableRow<'_, '_>, text: RichText) {
     });
 }
 
+/// Width of a numeric column inside a popup grid.
+const NUM_COL_W: f32 = 96.0;
+
+/// A right-aligned cell inside an `egui::Grid` (the table equivalent is
+/// `num_cell`).
+///
+/// The width is handed out explicitly: a bare right-to-left layout claims all
+/// of `available_width()`, which makes the last column of a grid drift to the
+/// window edge and — because the window sizes itself to its content — grow
+/// wider on every frame.
+fn num_grid_cell(ui: &mut egui::Ui, text: RichText) {
+    ui.allocate_ui_with_layout(
+        egui::vec2(NUM_COL_W, ui.spacing().interact_size.y),
+        egui::Layout::right_to_left(egui::Align::Center),
+        |ui| {
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+            ui.label(text)
+        },
+    );
+}
+
 fn fmt_or_dash(v: f64) -> String {
     if v == 0.0 {
         "—".to_string()
@@ -1610,12 +1659,15 @@ impl QHomeAccApp {
         // transaction viewer
         if let Some(trn) = self.show_transaction.clone() {
             let mut open = true;
-            egui::Window::new(theme::bold(format!("Άρθρο {}", trn.id), 14.0))
-                .open(&mut open)
+            let title = format!("Άρθρο {}", trn.id);
+            egui::Window::new(&title)
+                .title_bar(false)
                 .resizable(true)
-                .collapsible(false)
-                .default_width(600.0)
+                .default_width(620.0)
                 .show(ctx, |ui| {
+                    if theme::popup_header(ui, &p, &title) {
+                        open = false;
+                    }
                     ui.horizontal(|ui| {
                         ui.label(
                             theme::mono_bold(trn.date.format("%Y-%m-%d").to_string(), 13.0)
@@ -1630,51 +1682,54 @@ impl QHomeAccApp {
                     ui.separator();
                     ui.add_space(4.0);
 
-                    egui::Grid::new("arthro_grid")
-                        .striped(true)
-                        .num_columns(4)
-                        .spacing([20.0, 5.0])
-                        .min_col_width(90.0)
+                    egui::ScrollArea::vertical()
+                        .id_salt("arthro_scroll")
+                        .max_height(POPUP_MAX_H)
                         .show(ui, |ui| {
-                            for h in ["Λογ/μός", "Περιγραφή", "Χρέωση", "Πίστωση"]
-                            {
-                                ui.label(theme::bold(h, 11.5).color(p.muted));
-                            }
-                            ui.end_row();
+                            egui::Grid::new("arthro_grid")
+                                .striped(true)
+                                .num_columns(4)
+                                .spacing([20.0, 5.0])
+                                .min_col_width(90.0)
+                                .show(ui, |ui| {
+                                    for h in ["Λογ/μός", "Περιγραφή"] {
+                                        ui.label(theme::bold(h, 11.5).color(p.muted));
+                                    }
+                                    for h in ["Χρέωση", "Πίστωση"] {
+                                        num_grid_cell(ui, theme::bold(h, 11.5).color(p.muted));
+                                    }
+                                    ui.end_row();
 
-                            for lin in &trn.lines {
-                                ui.label(&lin.account_name);
-                                ui.label(RichText::new(&lin.sxolio).color(p.muted));
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        ui.label(theme::mono(f2gr(lin.debit()), 13.0).color(p.pos))
-                                    },
-                                );
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        ui.label(theme::mono(f2gr(lin.credit()), 13.0).color(p.neg))
-                                    },
-                                );
-                                ui.end_row();
-                            }
+                                    for lin in &trn.lines {
+                                        ui.label(&lin.account_name);
+                                        ui.label(RichText::new(&lin.sxolio).color(p.muted));
+                                        num_grid_cell(
+                                            ui,
+                                            theme::mono(f2gr(lin.debit()), 13.0).color(p.pos),
+                                        );
+                                        num_grid_cell(
+                                            ui,
+                                            theme::mono(f2gr(lin.credit()), 13.0).color(p.neg),
+                                        );
+                                        ui.end_row();
+                                    }
 
-                            if trn.lines.len() > 2 {
-                                let td: f64 = trn.lines.iter().map(|l| l.debit()).sum();
-                                let tc: f64 = trn.lines.iter().map(|l| l.credit()).sum();
-                                ui.label(theme::bold("Σύνολα", 14.0));
-                                ui.label("");
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| ui.label(theme::mono_bold(f2gr(td), 13.0).color(p.text)),
-                                );
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| ui.label(theme::mono_bold(f2gr(tc), 13.0).color(p.text)),
-                                );
-                                ui.end_row();
-                            }
+                                    if trn.lines.len() > 2 {
+                                        let td: f64 = trn.lines.iter().map(|l| l.debit()).sum();
+                                        let tc: f64 = trn.lines.iter().map(|l| l.credit()).sum();
+                                        ui.label(theme::bold("Σύνολα", 14.0));
+                                        ui.label("");
+                                        num_grid_cell(
+                                            ui,
+                                            theme::mono_bold(f2gr(td), 13.0).color(p.text),
+                                        );
+                                        num_grid_cell(
+                                            ui,
+                                            theme::mono_bold(f2gr(tc), 13.0).color(p.text),
+                                        );
+                                        ui.end_row();
+                                    }
+                                });
                         });
                 });
             if !open {
@@ -1687,12 +1742,14 @@ impl QHomeAccApp {
             let mut open = true;
             let rows = self.validation_rows.clone();
             let n_bad = rows.iter().filter(|r| !r.5).count();
-            egui::Window::new(theme::bold("Έλεγχος υπολοίπων", 14.0))
-                .open(&mut open)
+            egui::Window::new("Έλεγχος υπολοίπων")
+                .title_bar(false)
                 .resizable(true)
-                .collapsible(false)
-                .default_width(680.0)
+                .default_width(700.0)
                 .show(ctx, |ui| {
+                    if theme::popup_header(ui, &p, "Έλεγχος υπολοίπων") {
+                        open = false;
+                    }
                     ui.horizontal(|ui| {
                         if n_bad == 0 {
                             theme::chip(
@@ -1712,47 +1769,43 @@ impl QHomeAccApp {
                     });
                     ui.add_space(8.0);
 
-                    egui::Grid::new("validations_grid")
-                        .striped(true)
-                        .num_columns(6)
-                        .spacing([18.0, 5.0])
+                    egui::ScrollArea::vertical()
+                        .id_salt("validations_scroll")
+                        .max_height(POPUP_MAX_H)
                         .show(ui, |ui| {
-                            for h in [
-                                "",
-                                "Ημ/νία",
-                                "Λογ/μός",
-                                "Υπόλοιπο",
-                                "Αναμενόμενο",
-                                "Διαφορά",
-                            ] {
-                                ui.label(theme::bold(h, 11.5).color(p.muted));
-                            }
-                            ui.end_row();
+                            egui::Grid::new("validations_grid")
+                                .striped(true)
+                                .num_columns(6)
+                                .spacing([18.0, 5.0])
+                                .show(ui, |ui| {
+                                    for h in ["", "Ημ/νία", "Λογ/μός"] {
+                                        ui.label(theme::bold(h, 11.5).color(p.muted));
+                                    }
+                                    for h in ["Υπόλοιπο", "Αναμενόμενο", "Διαφορά"] {
+                                        num_grid_cell(ui, theme::bold(h, 11.5).color(p.muted));
+                                    }
+                                    ui.end_row();
 
-                            for (dat, acc, ypol, poso, diaf, ok) in &rows {
-                                theme::dot(ui, if *ok { p.pos } else { p.neg }, 4.5);
-                                ui.label(theme::mono(dat, 13.0).color(p.text));
-                                ui.label(acc);
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| ui.label(theme::mono(f2gr(*ypol), 13.0).color(p.text)),
-                                );
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| ui.label(theme::mono(f2gr(*poso), 13.0).color(p.text)),
-                                );
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        ui.label(theme::mono(f2gr(*diaf), 13.0).color(if *ok {
-                                            p.muted
-                                        } else {
-                                            p.neg
-                                        }))
-                                    },
-                                );
-                                ui.end_row();
-                            }
+                                    for (dat, acc, ypol, poso, diaf, ok) in &rows {
+                                        theme::dot(ui, if *ok { p.pos } else { p.neg }, 4.5);
+                                        ui.label(theme::mono(dat, 13.0).color(p.text));
+                                        ui.label(acc);
+                                        num_grid_cell(
+                                            ui,
+                                            theme::mono(f2gr(*ypol), 13.0).color(p.text),
+                                        );
+                                        num_grid_cell(
+                                            ui,
+                                            theme::mono(f2gr(*poso), 13.0).color(p.text),
+                                        );
+                                        num_grid_cell(
+                                            ui,
+                                            theme::mono(f2gr(*diaf), 13.0)
+                                                .color(if *ok { p.muted } else { p.neg }),
+                                        );
+                                        ui.end_row();
+                                    }
+                                });
                         });
                 });
             if !open {
@@ -1760,16 +1813,120 @@ impl QHomeAccApp {
             }
         }
 
+        // yearly results — έσοδα μείον έξοδα ανά χρήση
+        if self.show_results {
+            let mut open = true;
+            let rows = self.result_rows.clone();
+            let eos = self.eos();
+            let t_esoda = round2(rows.iter().map(|r| r.esoda).sum());
+            let t_ejoda = round2(rows.iter().map(|r| r.ejoda).sum());
+            let t_apotelesma = round2(t_esoda - t_ejoda);
+            egui::Window::new("Αποτελέσματα ανά έτος")
+                .title_bar(false)
+                .resizable(true)
+                .default_width(460.0)
+                .show(ctx, |ui| {
+                    if theme::popup_header(ui, &p, "Αποτελέσματα ανά έτος") {
+                        open = false;
+                    }
+                    if rows.is_empty() {
+                        ui.label(RichText::new("Καμία κίνηση εσόδων ή εξόδων").color(p.muted));
+                        return;
+                    }
+                    ui.horizontal(|ui| {
+                        theme::chip(
+                            ui,
+                            &format!("{} χρήσεις", rows.len()),
+                            p.accent,
+                            p.accent_soft,
+                        );
+                        if let Some(eos) = &eos {
+                            ui.label(RichText::new(format!("έως {}", eos)).small().color(p.muted));
+                        }
+                    });
+                    ui.add_space(8.0);
+
+                    // Only the year rows scroll; the totals stay pinned below
+                    // them, which is the whole point of a totals line.
+                    egui::ScrollArea::vertical()
+                        .id_salt("results_scroll")
+                        .max_height(POPUP_MAX_H)
+                        .show(ui, |ui| {
+                            egui::Grid::new("results_grid")
+                                .striped(true)
+                                .num_columns(4)
+                                .spacing([18.0, 5.0])
+                                .min_col_width(64.0)
+                                .show(ui, |ui| {
+                                    ui.label(theme::bold("Έτος", 11.5).color(p.muted));
+                                    for h in ["Έσοδα", "Έξοδα", "Αποτέλεσμα"] {
+                                        num_grid_cell(ui, theme::bold(h, 11.5).color(p.muted));
+                                    }
+                                    ui.end_row();
+
+                                    for r in &rows {
+                                        ui.label(
+                                            theme::mono(r.year.to_string(), 13.0).color(p.text),
+                                        );
+                                        num_grid_cell(
+                                            ui,
+                                            theme::mono(fmt_or_dash(r.esoda), 13.0).color(p.pos),
+                                        );
+                                        num_grid_cell(
+                                            ui,
+                                            theme::mono(fmt_or_dash(r.ejoda), 13.0).color(p.neg),
+                                        );
+                                        num_grid_cell(
+                                            ui,
+                                            theme::mono_bold(fmt_or_dash(r.apotelesma), 13.0)
+                                                .color(if r.apotelesma < 0.0 { p.neg } else { p.pos }),
+                                        );
+                                        ui.end_row();
+                                    }
+                                });
+                        });
+
+                    ui.add_space(2.0);
+                    ui.separator();
+                    egui::Grid::new("results_total_grid")
+                        .num_columns(4)
+                        .spacing([18.0, 5.0])
+                        .min_col_width(64.0)
+                        .show(ui, |ui| {
+                            ui.label(theme::bold("ΣΥΝΟΛΟ", 12.0).color(p.text));
+                            num_grid_cell(
+                                ui,
+                                theme::mono_bold(fmt_or_dash(t_esoda), 13.0).color(p.pos),
+                            );
+                            num_grid_cell(
+                                ui,
+                                theme::mono_bold(fmt_or_dash(t_ejoda), 13.0).color(p.neg),
+                            );
+                            num_grid_cell(
+                                ui,
+                                theme::mono_bold(fmt_or_dash(t_apotelesma), 13.0)
+                                    .color(if t_apotelesma < 0.0 { p.neg } else { p.pos }),
+                            );
+                            ui.end_row();
+                        });
+                });
+            if !open {
+                self.show_results = false;
+            }
+        }
+
         // parse errors
         if self.show_errors && !self.parse_errors.is_empty() {
             let mut open = true;
             let errors = self.parse_errors.clone();
-            egui::Window::new(theme::bold("Λάθη ανάγνωσης", 14.0))
-                .open(&mut open)
+            egui::Window::new("Λάθη ανάγνωσης")
+                .title_bar(false)
                 .resizable(true)
-                .collapsible(false)
                 .default_width(760.0)
                 .show(ctx, |ui| {
+                    if theme::popup_header(ui, &p, "Λάθη ανάγνωσης") {
+                        open = false;
+                    }
                     ui.label(
                         RichText::new(format!(
                             "{} γραμμές δεν διαβάστηκαν σωστά. Το βιβλίο άνοιξε ούτως ή άλλως.",
@@ -1779,7 +1936,8 @@ impl QHomeAccApp {
                     );
                     ui.add_space(8.0);
                     egui::ScrollArea::vertical()
-                        .max_height(420.0)
+                        .id_salt("errors_scroll")
+                        .max_height(POPUP_MAX_H)
                         .show(ui, |ui| {
                             for e in &errors {
                                 ui.label(RichText::new(e).small().color(p.warn));
@@ -1794,11 +1952,13 @@ impl QHomeAccApp {
         // fatal open error
         if let Some(err) = self.fatal_error.clone() {
             let mut open = true;
-            egui::Window::new(theme::bold("Σφάλμα", 14.0))
-                .open(&mut open)
+            egui::Window::new("Σφάλμα")
+                .title_bar(false)
                 .resizable(false)
-                .collapsible(false)
                 .show(ctx, |ui| {
+                    if theme::popup_header(ui, &p, "Σφάλμα") {
+                        open = false;
+                    }
                     ui.label(RichText::new(err).color(p.neg));
                 });
             if !open {

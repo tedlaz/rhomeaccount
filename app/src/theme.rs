@@ -679,6 +679,7 @@ pub fn window_frame(p: &Palette, maximized: bool, radius: u8) -> egui::Frame {
 pub enum ToolIcon {
     OpenFolder,
     CheckCircle,
+    BarChart,
 }
 
 /// An icon-only toolbar button.
@@ -750,6 +751,20 @@ pub fn icon_button(
                 stroke,
             );
         }
+        ToolIcon::BarChart => {
+            // three bars of rising height, sitting on a common baseline
+            for (left, top) in [(-7.5_f32, 0.5_f32), (-1.8, -4.0), (3.9, -7.5)] {
+                painter.rect_stroke(
+                    egui::Rect::from_min_max(
+                        egui::pos2(c.x + left, c.y + top),
+                        egui::pos2(c.x + left + 3.6, c.y + 7.0),
+                    ),
+                    CornerRadius::same(1),
+                    stroke,
+                    StrokeKind::Inside,
+                );
+            }
+        }
     }
 
     resp.on_hover_text(tooltip)
@@ -761,6 +776,30 @@ pub enum WinBtn {
     Maximize,
     Restore,
     Close,
+}
+
+/// Header row for a popup window built with `title_bar(false)`: the title on
+/// the left and the very same close button the main window uses on the right,
+/// so every window in the app closes through an identical control. Returns
+/// true when it was clicked.
+///
+/// egui's own window title bar draws a close cross of its own, styled by the
+/// widget visuals rather than by us — hence the hand-rolled header.
+pub fn popup_header(ui: &mut egui::Ui, p: &Palette, title: &str) -> bool {
+    let mut closed = false;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        ui.label(bold(title, 14.0).color(p.text));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            closed = window_button(ui, p, WinBtn::Close).clicked();
+        });
+    });
+    ui.add_space(4.0);
+    let line_y = ui.cursor().top();
+    ui.painter()
+        .hline(ui.max_rect().x_range(), line_y, Stroke::new(1.0_f32, p.border));
+    ui.add_space(8.0);
+    closed
 }
 
 /// A Windows-style caption button, drawn with strokes so it needs no glyphs.
